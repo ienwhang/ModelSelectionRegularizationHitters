@@ -1,6 +1,6 @@
 # AS4
 
-Plots were created using the [energy.csv](https://think.cs.vt.edu/corgis/csv/energy/energy.html) dataset from the CORGIS datasets project. The data was subsetted using R and is available in the repository as AS4.R.
+Plots were created using the [energy.csv](https://think.cs.vt.edu/corgis/csv/energy/energy.html) dataset from the CORGIS datasets project. The data was subsetted using R and is available in the repository as [AS4.R](https://github.com/ienwhang/AS4/blob/master/AS4.R).
 
 #### Bar Graph
 [https://bl.ocks.org/ienwhang/faeec2c0c3ca9d32ce43c50de123672c](https://bl.ocks.org/ienwhang/faeec2c0c3ca9d32ce43c50de123672c)
