@@ -1,0 +1,237 @@
+---
+title: "Model Selection, Cross-Validation, and Regularization"
+author: "Ien Whang"
+date: "10/10/2017"
+output: html_document
+---
+
+```{r, echo=T, eval=T, include=F}
+# Read in data and load packages
+library(ISLR)
+library(leaps)
+library(MASS)
+library(boot)
+library(car)
+library(glmnet)
+hitters <- read.csv("hitters.csv", header = T)
+```
+
+```{r, echo=T, eval=F, include=T}
+# Read in data and load packages
+library(ISLR)
+library(leaps)
+library(MASS)
+library(boot)
+library(car)
+library(glmnet)
+hitters <- read.csv("hitters.csv", header = T)
+```
+
+```{r, echo=T, eval=T}
+# Find VIF 
+mod <- lm(Salary ~ ., data = hitters)
+summaree <- summary(mod)
+vif(mod)
+```
+Many of the VIF scores are above 10, suggesting that multicollinearity appears to be an issue. The three most affected variables are CHits, CAtBat, and CRuns, in that order.
+\  
+```{r, echo=T, eval=T, fig.height = 4, fig.width = 6, fig.align='center'}
+# All possible regressions
+all <- regsubsets(Salary ~ ., data = hitters, nvmax = 19)
+allSumm <- summary(all)
+
+# Find the optimal number of explanatory variables
+max_idx <- which.max(allSumm$adjr2)
+print(paste("Optimal number of explanatory variables:", max_idx))
+
+# Plot the Adjusted R^2 for each of these 
+{plot(allSumm$adjr2, type = "l", xlab = "Number of Explanatory Variables", 
+      ylab = bquote("Adjusted R"^2), main = "Optimal Model Order")
+points(allSumm$adjr2, pch = 16)
+points(x = max_idx, y = allSumm$adjr2[max_idx], pch = 16, col = "red")}
+
+# Find the optimum combination of 11 variables to include
+allSumm$which[max_idx,]
+modelAllOptimum <- lm(Salary ~ AtBat + Hits + Walks + CAtBat + CRuns + CRBI + 
+                        CWalks + League + Division + PutOuts + Assists, 
+                      data = hitters)
+
+sm <- lm(Salary ~ 1, data = hitters)
+lg <- lm(Salary ~ ., data = hitters)
+
+# Forward selecion
+# forwardSteps <- stepAIC(object = sm, scope = list(upper = lg, lower = sm),
+#                         direction = "forward")
+forward <- stepAIC(object = sm, scope = list(upper = lg, lower = sm), 
+                   direction = "forward", trace = 0)
+
+# Backward selection
+# backwardSteps <- stepAIC(object = lg, scope = list(upper = lg, lower = sm),
+#                         direction = "backward")
+backward <- stepAIC(object = lg, scope = list(upper = lg, lower = sm), 
+                    direction = "backward", trace = 0)
+
+# Hybrid selection
+# hybridSteps <- stepAIC(object = lg, scope = list(upper = lg, lower = sm),
+#                        direction = "both")
+hybrid <- stepAIC(object = sm, scope = list(upper = lg, lower = sm), 
+                  direction = "both", trace = 0)
+
+# Perform cross validation
+n <- dim(hitters)[1]
+trn <- sample(x = c(rep(TRUE, round(0.8*n)), rep(FALSE, n-round(0.8*n))), 
+              size = n, replace = FALSE)
+train <- hitters[trn,]
+tst <- !trn 
+test <- hitters[tst,]
+
+# Function that returns RMSE
+# Takes in model and test distribution as input
+getRMSE <- function(mod, test) {
+  set.seed(1) # set seed
+  pred <- predict(object = mod, newdata = test)
+  RMSE <- sqrt(mean((test$Salary - pred)^2))
+  return (RMSE)
+}
+
+# Full model 
+mod <- lm(Salary ~ ., data = train)
+RMSEfull <- getRMSE(mod, test)
+
+# Optimal all-possible regressions model
+mod <- lm(Salary ~ AtBat + Hits + Walks + CAtBat + CRuns + CRBI + 
+                        CWalks + League + Division + PutOuts + Assists, 
+                      data = train)
+RMSEoptimum <- getRMSE(mod, test)
+
+# Best stepwise-selection model
+sm <- lm(Salary ~ 1, data = train)
+lg <- lm(Salary ~ ., data = train)
+
+forward <- stepAIC(object = sm, scope = list(upper = lg, lower = sm), 
+                   direction = "forward", trace = 0)
+RMSEforward <- getRMSE(forward, test)
+summary(forward)
+
+backward <- stepAIC(object = lg, scope = list(upper = lg, lower = sm), 
+                    direction = "backward", trace = 0)
+RMSEbackward <- getRMSE(backward, test)
+summary(backward)
+
+hybrid <- stepAIC(object = sm, scope = list(upper = lg, lower = sm), 
+                  direction = "both", trace = 0)
+RMSEhybrid <- getRMSE(hybrid, test)
+summary(hybrid)
+
+print(paste("Full model CV RMSE:", round(RMSEfull, 3)))
+print(paste("Optimal model CV RMSE:", round(RMSEoptimum, 3)))
+print(paste("Forward selction CV RMSE:", round(RMSEforward, 3)))
+print(paste("Backward selection CV RMSE:", round(RMSEbackward, 3)))
+print(paste("Hybrid selection CV RMSE:", round(RMSEhybrid, 3)))
+```
+The optimal model appears to be the most appropriate since it has the lowest cross validation RMSE among all models fitted.    
+
+```{r, echo=T, eval=T, fig.height = 4, fig.width = 6, fig.align='center'}
+# Full model 
+mod <- glm(Salary ~ ., data = hitters)
+set.seed(1)
+RMSEfull_K <- sqrt((cv.glm(hitters, mod, K = 10)$delta)[1])
+
+# Optimal all-possible regressions model
+mod <- glm(Salary ~ AtBat + Hits + Walks + CAtBat + CRuns + CRBI + 
+                        CWalks + League + Division + PutOuts + Assists, 
+                      data = hitters)
+set.seed(1)
+RMSEoptimum_K <- sqrt((cv.glm(hitters, mod, K = 10)$delta)[1])
+
+# Best stepwise-selection model
+sm <- lm(Salary ~ 1, data = hitters)
+lg <- lm(Salary ~ ., data = hitters)
+
+forward <- stepAIC(object = sm, scope = list(upper = lg, lower = sm), 
+                   direction = "forward", trace = 0)
+mod <- glm(forward)
+set.seed(1)
+RMSEforward_K <- sqrt((cv.glm(hitters, mod, K = 10)$delta)[1])
+
+backward <- stepAIC(object = lg, scope = list(upper = lg, lower = sm), 
+                    direction = "backward", trace = 0)
+mod <- glm(backward)
+set.seed(1)
+RMSEbackward_K <- sqrt((cv.glm(hitters, mod, K = 10)$delta)[1])
+
+hybrid <- stepAIC(object = sm, scope = list(upper = lg, lower = sm), 
+                  direction = "both", trace = 0)
+mod <- glm(hybrid)
+set.seed(1)
+RMSEhybrid_K <- sqrt((cv.glm(hitters, mod, K = 10)$delta)[1])
+
+print(paste("Full model K-fold RMSE:", round(RMSEfull_K, 3)))
+print(paste("Optimal model K-fold RMSE:", round(RMSEoptimum_K, 3)))
+print(paste("Forward selection K-fold RMSE:", round(RMSEforward_K, 3)))
+print(paste("Backward selection K-fold RMSE:", round(RMSEbackward_K, 3)))
+print(paste("Hybrid selection K-fold RMSE:", round(RMSEhybrid_K, 3)))
+```
+Overall, hybrid stepwise-selection seems to be the model of choice. In this case, the variables in the stepwise-selection methods all seem to be the same, but this may not always be the case when multicolliearity is present. If multicollinearity was present among the variables of the model, the hybrid approach would output a considerably more accurate model, since it allows for the exit of variables. Hybrid stepwise-selection also gives a good predictive accuracy relative to the other models using k-fold cross validation. It does not result in the lowest RMSE, but is relatively close to that of the optimal model, and considerably lower than that of the other stepwise-selection methods. Time-wise, hybrid stepwise-selection out performs the optimal model, since it requires fewer computational steps, though the optimal model seems to output a model that is comparable in predictive accuracy, if not better.   
+
+```{r, echo=T, eval=T, fig.height = 4, fig.width = 6, fig.align='center'}
+## Shrinkage/Regularization Methods
+## Ridge and LASSO
+X <- model.matrix(Salary ~ ., hitters)[,-1]
+y <- hitters$Salary
+
+grid <- 10^seq(10, -3, length=1000)  # Set grid
+
+# RIDGE
+ridge.mod <- glmnet(X, y, alpha=0, lambda=grid)
+plot(ridge.mod, xvar = "lambda", label = TRUE)  # Plot param ests against lambda
+
+## LASSO
+lasso.mod <- glmnet(X, y, alpha=1, lambda=grid)
+plot(lasso.mod, xvar = "lambda", label = TRUE)  # Plot param ests against lambda
+```
+
+```{r, echo=T, eval=T}
+set.seed(1)  
+train <- sample(1:nrow(X), 210)
+test <- (-train)
+y.test <- y[test]
+
+# RIDGE
+cv.out <- cv.glmnet(X[train,], y[train], alpha=0)  # Find best lambda
+plot(cv.out)
+
+bestlam.r <- cv.out$lambda.min
+print(paste("Optimal lambda:", round(bestlam.r,3)))
+predict(ridge.mod, s=bestlam.r, type = "coefficients")[1:20,]  # Best ridge regression model
+
+# LASSO
+cv.out <- cv.glmnet(X[train,], y[train], alpha=1)  # Find best lambda
+plot(cv.out)
+
+bestlam.l <- cv.out$lambda.min
+print(paste("Optimal lambda:", round(bestlam.l,3)))
+predict(lasso.mod, s=bestlam.l, type = "coefficients")[1:20,]  # Best LASSO regression model
+```
+In the ridge model, the explanatory variables have been minimised where insignificant variables are close to 0, but are not zero, and the significant variables are small. This is contrasted with the LASSO model where insignificant variables are zero, and the significant variables are large, relative to the significant values of the ridge model. Both models are similar in identifying which variables are significant and which are not.    
+
+```{r, echo=T, eval=T} 
+trn <- hitters[train,]
+tst <- hitters[-train,] # Held-out test set
+
+stepwise <- lm(Salary ~ AtBat + Hits + Walks + CAtBat + CRuns + 
+                 CRBI + CWalks + Division + PutOuts + Assists, data = trn)
+step.pred <- predict(stepwise, tst)
+RMSEs <- sqrt(mean((step.pred - y.test)^2))  # Predictive RMSE of best stepwise model
+
+ridge.pred <- predict(ridge.mod, s=bestlam.r, newx=X[test,])
+RMSEr <- sqrt(mean((ridge.pred - y.test)^2))  # Predictive RMSE of best ridge model
+
+lasso.pred <- predict(lasso.mod, s=bestlam.l, newx=X[test,])
+RMSEl <- sqrt(mean((lasso.pred - y.test)^2))  # Predictive RMSE of best LASSO model
+
+print(paste("RMSE (Stepwise):", round(RMSEs,3)))
+print(paste("RMSE (LASSO):", round(RMSEl,3)))
+print(paste("RMSE (Ridge):", round(RMSEr,3)))
+```
+The RMSE of the best LASSO regression is lowest, followed by the best ridge regression, and then Best-Stepwise selection model. Based on this criterion, the LASSO model is the best.
